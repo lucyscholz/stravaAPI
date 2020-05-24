@@ -1,0 +1,126 @@
+function dataPull() {
+  
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("StravaData");
+  var all = ss.getSheetByName("ALLdata");
+  var helper = ss.getSheetByName("Helper");
+  var access_token = helper.getRange("F4").getValue();
+  var lastRow = helper.getRange("J1").getValue();
+  var errors = 0;
+  
+  var url = "https://www.strava.com/api/v3/clubs/[INSERT CLUB ID HERE]/activities/?access_token=" + access_token;
+  
+  try {
+    var response = UrlFetchApp.fetch(url);
+  }
+  catch(e) {
+    errors++;
+    tokenUpdate();
+    testWait();
+    access_token = helper.getRange("F4").getValue();
+    url = "https://www.strava.com/api/v3/clubs/[INSERT CLUB ID HERE]/activities/?access_token=" + access_token; 
+    response = UrlFetchApp.fetch(url);
+  }
+    
+  // Parse the JSON reply
+  var json = response.getContentText();
+  var data = JSON.parse(json);
+  
+  //find number of runs
+  var numRuns = data.length;
+  var filtered = [];
+  
+  var columnVals = sheet.getRange(1,1,sheet.getLastRow(),1).getValues();
+  
+  var now = new Date();
+  
+  //write activities to sheet
+  for (var i = 0; i < numRuns; i++) {
+    var run = [];
+    var exists = false;
+    var name = data[i]["name"];
+    var distance = data[i]["distance"];
+    var moving_time = data[i]["moving_time"];
+    var elapsed_time = data[i]["elapsed_time"];
+    var total_elevation_gain = data[i]["total_elevation_gain"];
+    var type = data[i]["type"];
+    var athleteFirstName = data[i]["athlete"]["firstname"];
+    var athleteLastName = data[i]["athlete"]["lastname"];
+    var activityKey = distance + moving_time + elapsed_time + total_elevation_gain;
+    
+    run.push(activityKey);
+    run.push(now);
+    run.push(athleteFirstName);
+    run.push(athleteLastName);
+    run.push(type);
+    run.push(name);
+    run.push(distance);
+    run.push(moving_time);
+    run.push(elapsed_time);
+    run.push(total_elevation_gain);
+    
+    //check if activity is already on list
+    for(var x = 0; x<columnVals.length;x++){
+      if(columnVals[x] == activityKey){ 
+        exists = true;
+      }
+    }
+    
+    if (exists === false) {
+      filtered.push(run);
+    }
+  }
+  
+  if(filtered.length > 0) {
+    sheet.getRange(lastRow,1,filtered.length,10).setValues(filtered).setVerticalAlignment("middle").setHorizontalAlignment("center").setWrap(true);
+  }
+
+  writeRecord(filtered.length,errors);
+}
+
+
+
+
+
+function tokenUpdate() {
+  
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var helper = ss.getSheetByName("Helper");
+  var refreshToken = helper.getRange("F3").getValue();
+  
+  var url = "https://www.strava.com/api/v3/oauth/token?client_id=[INSERT CLIENT ID HERE]&client_secret=[INSERT CLIENT SECRET HERE]&grant_type=refresh_token&refresh_token=" + refreshToken;
+  var options = {
+    method: "POST"
+  };
+  var response = UrlFetchApp.fetch(url,options);
+  var json = response.getContentText();
+  var data = JSON.parse(json);
+  
+  var newAccess = data["access_token"];
+  var newRefresh = data["refresh_token"];
+  
+  helper.getRange("F3").setValue(newRefresh);
+  helper.getRange("F4").setValue(newAccess);
+  
+}
+
+
+
+
+
+
+function testWait(){
+  var lock = LockService.getScriptLock(); lock.waitLock(300000); 
+  SpreadsheetApp.flush(); lock.releaseLock();
+}
+
+
+
+
+
+function writeRecord(activities,errors){
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("DataPullRecords");
+  var now = new Date();
+  sheet.appendRow([now, activities, errors]);
+}
